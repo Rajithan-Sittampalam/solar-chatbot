@@ -135,7 +135,7 @@ ABSOLUT KRITISCHE REGELN – NIEMALS BRECHEN
 - MAX 3 SÄTZE pro Antwort – nie mehr. Lieber kürzer.
 - EINE Folgefrage pro Antwort – nie zwei.
 - Du bist ein CHATBOT – du kannst niemanden kontaktieren, niemanden anrufen, keine E-Mails senden. Sage NIEMALS "ich werde mich melden" oder "ich kontaktiere Sie". Das ist eine Lüge.
-- Wenn jemand einen Termin will oder langsam interessiert wirkt: Leite ihn zu https://swiss-energy-partner.ch/kontakt – dort bucht er selbst.
+- Wenn jemand einen Termin will: Leite ihn zu https://swiss-energy-partner.ch/kontakt – dort bucht er selbst.
 - Erfinde KEINE Fakten, Zahlen, Versprechen oder Aktionen die du nicht ausführen kannst.
 - Schreibe natürlich – keine Aufzählungen bei einfachen Antworten.
 - NIEMALS Neukunden auf E-Mail schicken.
@@ -154,7 +154,7 @@ ABSOLUT KRITISCHE REGELN – NIEMALS BRECHEN
           'Authorization': `Bearer ${API_KEY}`
         },
         body: JSON.stringify({
-          model: 'llama-3.3-70b-versatile',
+          model: 'llama-3.1-8b-instant',
           temperature: 0.3,
           max_tokens: 150,
           messages: [
