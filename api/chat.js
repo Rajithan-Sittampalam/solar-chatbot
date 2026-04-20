@@ -132,7 +132,7 @@ Erkennbar an: "Niemand meldet sich", "warte auf Offerte", "keine Antwort", "bin 
 ═══════════════════════════════════════
 ABSOLUT KRITISCHE REGELN – NIEMALS BRECHEN
 ═══════════════════════════════════════
-- MAX 3 SÄTZE pro Antwort – nie mehr. Lieber kürzer.
+- MAX 2 SÄTZE pro Antwort plus eine Folgefrage. Nie mehr. Jeder Satz muss einen Mehrwert haben – streiche alles Unnötige.
 - EINE Folgefrage pro Antwort – nie zwei.
 - Du bist ein CHATBOT – du kannst niemanden kontaktieren, niemanden anrufen, keine E-Mails senden. Sage NIEMALS "ich werde mich melden" oder "ich kontaktiere Sie". Das ist eine Lüge.
 - Wenn jemand einen Termin will: Leite ihn zu https://swiss-energy-partner.ch/kontakt – dort bucht er selbst.
@@ -156,7 +156,7 @@ ABSOLUT KRITISCHE REGELN – NIEMALS BRECHEN
         body: JSON.stringify({
           model: 'llama-3.1-8b-instant',
           temperature: 0.3,
-          max_tokens: 150,
+          max_tokens: 100,
           messages: [
             { role: 'system', content: SYSTEM_PROMPT },
             ...limitedMessages
@@ -177,7 +177,36 @@ ABSOLUT KRITISCHE REGELN – NIEMALS BRECHEN
     const data = await groqResponse.json();
     if (data.error) return res.status(500).json({ error: data.error.message });
 
-    const reply = data.choices?.[0]?.message?.content || 'Keine Antwort erhalten.';
+    const rawReply = data.choices?.[0]?.message?.content || 'Keine Antwort erhalten.';
+
+    // ============================================
+    // GUARDRAIL – Halluzinations-Schutz
+    // Prüft ob die Antwort verdächtige Inhalte hat
+    // ============================================
+    function validateReply(text) {
+      const lower = text.toLowerCase();
+
+      // Konkrete Preise erkennen (CHF/Fr. + Zahl)
+      const hasPrice = /chf\s*[\d.,]+|fr\.\s*[\d.,]+|\d+['.]?\d*\s*(franken|chf)/i.test(text);
+
+      // Garantieversprechen erkennen
+      const hasGuarantee = /(garantie|garantieren|garant).*(\d+\s*jahr)/i.test(lower);
+
+      // Falsche Kontaktversprechen erkennen
+      const hasFalseContact = /(ich werde mich melden|ich kontaktiere|ich rufe|ich schreibe ihnen|ich melde mich)/i.test(lower);
+
+      // Konkurrenten loben
+      const praiseCompetitor = /(konkurrenz ist besser|andere anbieter sind besser|empfehle ihnen einen anderen)/i.test(lower);
+
+      if (hasPrice || hasGuarantee || hasFalseContact || praiseCompetitor) {
+        // Antwort ersetzen mit sicherer Fallback-Antwort
+        return 'Für genaue Details zu Ihrer Situation erstellen wir gerne ein individuelles Angebot. Vereinbaren Sie jetzt ein kostenloses Beratungsgespräch: https://swiss-energy-partner.ch/kontakt';
+      }
+
+      return text;
+    }
+
+    const reply = validateReply(rawReply);
 
     if (SUPABASE_URL && SUPABASE_KEY) {
       const letzteNachricht = limitedMessages[limitedMessages.length - 1]?.content || '';
