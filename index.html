@@ -1,0 +1,276 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Swiss Energy Partner – Solar Assistent</title>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500&family=DM+Serif+Display&display=swap" rel="stylesheet"/>
+  <style>
+    :root {
+      --gelb: #F5C400;
+      --dunkel: #1A1A2E;
+      --hell: #F7F6F2;
+      --text: #1A1A2E;
+      --grau: #8888A0;
+      --weiss: #ffffff;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: 'DM Sans', sans-serif;
+      background: var(--hell);
+      color: var(--text);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 2rem 1rem;
+    }
+    .header { text-align: center; margin-bottom: 2rem; }
+    .logo-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 10px;
+      background: var(--dunkel);
+      color: var(--weiss);
+      padding: 10px 20px;
+      border-radius: 50px;
+      font-size: 14px;
+      font-weight: 500;
+      margin-bottom: 1rem;
+    }
+    .logo-badge .dot {
+      width: 8px; height: 8px;
+      background: var(--gelb);
+      border-radius: 50%;
+      animation: pulse 2s infinite;
+    }
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.4; }
+    }
+    .header h1 {
+      font-family: 'DM Serif Display', serif;
+      font-size: 2rem;
+      color: var(--dunkel);
+      margin-bottom: 0.5rem;
+    }
+    .header p { color: var(--grau); font-size: 14px; }
+    .chat-container {
+      width: 100%;
+      max-width: 680px;
+      background: var(--weiss);
+      border-radius: 24px;
+      box-shadow: 0 4px 40px rgba(26,26,46,0.10);
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+    }
+    #messages {
+      padding: 1.5rem;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+      min-height: 380px;
+      max-height: 480px;
+      overflow-y: auto;
+    }
+    .msg {
+      display: flex;
+      gap: 10px;
+      align-items: flex-start;
+      animation: fadeIn 0.3s ease;
+    }
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(6px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+    .msg.bot { flex-direction: row; }
+    .msg.user { flex-direction: row-reverse; }
+    .avatar {
+      width: 32px; height: 32px;
+      border-radius: 50%;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 14px; flex-shrink: 0;
+    }
+    .bot .avatar { background: var(--gelb); color: var(--dunkel); font-weight: 600; }
+    .user .avatar { background: var(--dunkel); color: var(--weiss); font-weight: 600; }
+    .bubble {
+      max-width: 75%;
+      padding: 12px 16px;
+      border-radius: 18px;
+      font-size: 14px;
+      line-height: 1.7;
+    }
+    .bot .bubble { background: var(--hell); color: var(--text); border-top-left-radius: 4px; }
+    .user .bubble { background: var(--dunkel); color: var(--weiss); border-top-right-radius: 4px; }
+    .bubble.thinking { color: var(--grau); font-style: italic; }
+    .suggestions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
+    .suggestion-btn {
+      background: var(--weiss);
+      border: 1px solid #E0E0EE;
+      color: var(--dunkel);
+      padding: 6px 14px;
+      border-radius: 50px;
+      font-size: 12px;
+      cursor: pointer;
+      font-family: 'DM Sans', sans-serif;
+      transition: all 0.2s;
+    }
+    .suggestion-btn:hover { background: var(--gelb); border-color: var(--gelb); }
+    .input-area {
+      padding: 1rem 1.5rem 1.5rem;
+      border-top: 1px solid #F0F0F5;
+      display: flex; gap: 10px; align-items: center;
+    }
+    #user-input {
+      flex: 1;
+      padding: 12px 18px;
+      border: 1.5px solid #E8E8F0;
+      border-radius: 50px;
+      font-family: 'DM Sans', sans-serif;
+      font-size: 14px;
+      color: var(--text);
+      background: var(--hell);
+      outline: none;
+      transition: border-color 0.2s;
+    }
+    #user-input:focus { border-color: var(--gelb); }
+    #send-btn {
+      width: 44px; height: 44px;
+      border-radius: 50%;
+      background: var(--dunkel);
+      border: none; cursor: pointer;
+      display: flex; align-items: center; justify-content: center;
+      transition: background 0.2s, transform 0.1s;
+      flex-shrink: 0;
+    }
+    #send-btn:hover { background: var(--gelb); }
+    #send-btn:active { transform: scale(0.95); }
+    #send-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+    #send-btn svg { width: 18px; height: 18px; fill: white; }
+    #send-btn:hover svg { fill: var(--dunkel); }
+    .footer { text-align: center; margin-top: 1.5rem; font-size: 12px; color: var(--grau); }
+  </style>
+</head>
+<body>
+
+  <div class="header">
+    <div class="logo-badge">
+      <span class="dot"></span>
+      Swiss Energy Partner
+    </div>
+    <h1>Solar Assistent</h1>
+    <p>Stellen Sie uns Ihre Fragen rund um Photovoltaik & Solarenergie</p>
+  </div>
+
+  <div class="chat-container">
+    <div id="messages">
+      <div class="msg bot">
+        <div class="avatar">☀</div>
+        <div>
+          <div class="bubble">
+            Guten Tag! Ich bin Ihr Solar-Assistent von Swiss Energy Partner. Wie kann ich Ihnen helfen?
+          </div>
+          <div class="suggestions">
+            <button class="suggestion-btn" onclick="askSuggestion('Was kostet eine Solaranlage?')">Was kostet eine Solaranlage?</button>
+            <button class="suggestion-btn" onclick="askSuggestion('Wie lange dauert eine Installation?')">Wie lange dauert eine Installation?</button>
+            <button class="suggestion-btn" onclick="askSuggestion('Lohnt sich Solar in der Schweiz?')">Lohnt sich Solar in der Schweiz?</button>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="input-area">
+      <input id="user-input" type="text" placeholder="Ihre Frage zur Solaranlage..." />
+      <button id="send-btn">
+        <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+          <path d="M2 21l21-9L2 3v7l15 2-15 2v7z"/>
+        </svg>
+      </button>
+    </div>
+  </div>
+
+  <div class="footer">
+    Powered by Swiss Energy Partner &nbsp;·&nbsp; AI-gestützter Assistent
+  </div>
+
+  <script>
+    const messagesEl = document.getElementById('messages');
+    const inputEl    = document.getElementById('user-input');
+    const sendBtn    = document.getElementById('send-btn');
+
+    const history = [];
+
+    function addMessage(text, role) {
+      const wrap = document.createElement('div');
+      wrap.className = 'msg ' + role;
+      const avatar = document.createElement('div');
+      avatar.className = 'avatar';
+      avatar.textContent = role === 'user' ? 'Du' : '☀';
+      const bubble = document.createElement('div');
+      bubble.className = 'bubble';
+      bubble.textContent = text;
+      wrap.appendChild(avatar);
+      wrap.appendChild(bubble);
+      messagesEl.appendChild(wrap);
+      messagesEl.scrollTop = messagesEl.scrollHeight;
+      return bubble;
+    }
+
+    function askSuggestion(text) {
+      inputEl.value = text;
+      sendMessage();
+    }
+
+    async function sendMessage() {
+      const text = inputEl.value.trim();
+      if (!text) return;
+
+      inputEl.value = '';
+      sendBtn.disabled = true;
+      addMessage(text, 'user');
+      history.push({ role: 'user', content: text });
+
+      const thinkingBubble = addMessage('tippt...', 'bot');
+      thinkingBubble.classList.add('thinking');
+
+      try {
+        // -----------------------------------------------
+        // KEIN API KEY HIER! 🔒
+        // Wir schicken die Nachricht an UNSEREN eigenen
+        // Server unter /api/chat – der hat den Key
+        // -----------------------------------------------
+        const response = await fetch('/api/chat', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ messages: history })
+        });
+
+        const data = await response.json();
+
+        if (data.error) {
+          thinkingBubble.textContent = 'Fehler: ' + data.error;
+          thinkingBubble.classList.remove('thinking');
+          sendBtn.disabled = false;
+          return;
+        }
+
+        const reply = data.reply || 'Keine Antwort erhalten.';
+        thinkingBubble.textContent = reply;
+        thinkingBubble.classList.remove('thinking');
+        history.push({ role: 'assistant', content: reply });
+
+      } catch (err) {
+        thinkingBubble.textContent = 'Verbindungsfehler. Bitte Seite neu laden.';
+        thinkingBubble.classList.remove('thinking');
+      }
+
+      sendBtn.disabled = false;
+      inputEl.focus();
+    }
+
+    sendBtn.addEventListener('click', sendMessage);
+    inputEl.addEventListener('keydown', e => { if (e.key === 'Enter') sendMessage(); });
+  </script>
+</body>
+</html>
