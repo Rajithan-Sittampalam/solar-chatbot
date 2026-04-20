@@ -209,7 +209,13 @@
       avatar.textContent = role === 'user' ? 'Du' : '☀';
       const bubble = document.createElement('div');
       bubble.className = 'bubble';
-      bubble.textContent = text;
+      // URLs in Bot-Nachrichten klickbar machen
+      if (role === 'bot') {
+        const esc = text.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+        bubble.innerHTML = esc.replace(/(https?:\/\/[^\s]+)/g, '<a href="$1" target="_blank" rel="noopener" style="color:#C0392B;text-decoration:underline;word-break:break-all;">$1</a>');
+      } else {
+        bubble.textContent = text;
+      }
       wrap.appendChild(avatar);
       wrap.appendChild(bubble);
       messagesEl.appendChild(wrap);
@@ -256,7 +262,8 @@
         }
 
         const reply = data.reply || 'Keine Antwort erhalten.';
-        thinkingBubble.textContent = reply;
+        const esc2 = reply.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+        thinkingBubble.innerHTML = esc2.replace(/(https?:\/\/[^\s]+)/g, '<a href="$1" target="_blank" rel="noopener" style="color:#C0392B;text-decoration:underline;word-break:break-all;">$1</a>');
         thinkingBubble.classList.remove('thinking');
         history.push({ role: 'assistant', content: reply });
 
