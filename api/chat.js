@@ -1,5 +1,6 @@
 // ============================================
-// api/chat.js – SEP Solar Assistent v3.1
+// api/chat.js – SEP Solar Assistent v4.0
+// Claude Haiku 4.5
 // ============================================
 
 const rateLimitMap = new Map();
@@ -32,7 +33,7 @@ export default async function handler(req, res) {
   }
 
   const limitedMessages = messages;
-  const API_KEY      = process.env.GROQ_API_KEY;
+  const API_KEY      = process.env.ANTHROPIC_API_KEY;
   const SUPABASE_URL = process.env.SUPABASE_URL;
   const SUPABASE_KEY = process.env.SUPABASE_KEY;
 
@@ -44,7 +45,7 @@ DEIN CHARAKTER:
 Du klingst wie ein erfahrener, sympathischer Schweizer Energieberater und nicht wie ein Roboter. Du bist direkt, ehrlich und hilfreich. Du schreibst fliessend und menschlich, nicht abgehackt. Du stellst kluge Fragen. Du erfindest NIE Fakten.
 
 SPRACHE - STRIKT EINHALTEN:
-- Schreibe NIEMALS das Zeichen "ss" als "ß". Immer "ss": "Strasse", "heisst", "gross", "Fluss", "weiss".
+- Schreibe NIEMALS das Zeichen "ß". Immer "ss": "Strasse", "heisst", "gross", "Fluss", "weiss".
 - Verwende KEINE Gedankenstriche mitten im Satz. Formuliere stattdessen normale Satzkonstruktionen.
 - Schreibe fliessend und warm, nicht in abgehackten Kurzantworten. Verbinde Gedanken zu einem natürlichen Satz.
 
@@ -132,7 +133,7 @@ Erkennbar an: "Niemand meldet sich", "warte auf Offerte", "keine Antwort", "bin 
 ═══════════════════════════════════════
 ABSOLUT KRITISCHE REGELN – NIEMALS BRECHEN
 ═══════════════════════════════════════
-- MAX 2 SÄTZE pro Antwort plus eine Folgefrage. Nie mehr. Jeder Satz muss einen Mehrwert haben – streiche alles Unnötige.
+- MAX 2 SÄTZE pro Antwort plus eine Folgefrage. Nie mehr. Jeder Satz muss einen Mehrwert haben.
 - EINE Folgefrage pro Antwort – nie zwei.
 - Du bist ein CHATBOT – du kannst niemanden kontaktieren, niemanden anrufen, keine E-Mails senden. Sage NIEMALS "ich werde mich melden" oder "ich kontaktiere Sie". Das ist eine Lüge.
 - Wenn jemand einen Termin will: Leite ihn zu https://swiss-energy-partner.ch/kontakt – dort bucht er selbst.
@@ -145,22 +146,23 @@ ABSOLUT KRITISCHE REGELN – NIEMALS BRECHEN
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 15000);
 
-    let groqResponse;
+    let anthropicResponse;
     try {
-      groqResponse = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+      // Nachrichten ins Anthropic-Format umwandeln
+      // Anthropic erwartet: [{role: "user", content: "..."}, {role: "assistant", content: "..."}]
+      // Kein "system" in messages – system kommt separat
+      anthropicResponse = await fetch('https://api.anthropic.com/v1/messages', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${API_KEY}`
+          'x-api-key': API_KEY,
+          'anthropic-version': '2023-06-01'
         },
         body: JSON.stringify({
-          model: 'llama-3.1-8b-instant',
-          temperature: 0.3,
-          max_tokens: 100,
-          messages: [
-            { role: 'system', content: SYSTEM_PROMPT },
-            ...limitedMessages
-          ]
+          model: 'claude-haiku-4-5',
+          max_tokens: 150,
+          system: SYSTEM_PROMPT,
+          messages: limitedMessages
         }),
         signal: controller.signal
       });
@@ -168,41 +170,30 @@ ABSOLUT KRITISCHE REGELN – NIEMALS BRECHEN
       clearTimeout(timeout);
     }
 
-    if (groqResponse.status === 429) {
+    if (anthropicResponse.status === 429) {
       return res.status(200).json({
         reply: 'Im Moment sind wir sehr beschäftigt. Bitte versuchen Sie es gleich erneut oder besuchen Sie: https://swiss-energy-partner.ch/kontakt'
       });
     }
 
-    const data = await groqResponse.json();
+    const data = await anthropicResponse.json();
     if (data.error) return res.status(500).json({ error: data.error.message });
 
-    const rawReply = data.choices?.[0]?.message?.content || 'Keine Antwort erhalten.';
+    const rawReply = data.content?.[0]?.text || 'Keine Antwort erhalten.';
 
     // ============================================
     // GUARDRAIL – Halluzinations-Schutz
-    // Prüft ob die Antwort verdächtige Inhalte hat
     // ============================================
     function validateReply(text) {
       const lower = text.toLowerCase();
-
-      // Konkrete Preise erkennen (CHF/Fr. + Zahl)
-      const hasPrice = /chf\s*[\d.,]+|fr\.\s*[\d.,]+|\d+['.]?\d*\s*(franken|chf)/i.test(text);
-
-      // Garantieversprechen erkennen
-      const hasGuarantee = /(garantie|garantieren|garant).*(\d+\s*jahr)/i.test(lower);
-
-      // Falsche Kontaktversprechen erkennen
+      const hasPrice = /chf\s*[\d.,]+|fr\.\s*[\d.,]+|\d+['.]?\d*\s*(franken|chf)/i.test(text);
+      const hasGuarantee = /(garantie|garantieren|garant).*(\d+\s*jahr)/i.test(lower);
       const hasFalseContact = /(ich werde mich melden|ich kontaktiere|ich rufe|ich schreibe ihnen|ich melde mich)/i.test(lower);
-
-      // Konkurrenten loben
       const praiseCompetitor = /(konkurrenz ist besser|andere anbieter sind besser|empfehle ihnen einen anderen)/i.test(lower);
 
       if (hasPrice || hasGuarantee || hasFalseContact || praiseCompetitor) {
-        // Antwort ersetzen mit sicherer Fallback-Antwort
         return 'Für genaue Details zu Ihrer Situation erstellen wir gerne ein individuelles Angebot. Vereinbaren Sie jetzt ein kostenloses Beratungsgespräch: https://swiss-energy-partner.ch/kontakt';
       }
-
       return text;
     }
 
