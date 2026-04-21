@@ -1,9 +1,11 @@
 // ============================================
-// api/chat.js – SEP Solar Assistent v4.1
+// api/chat.js – SEP Solar Assistent v4.3
 // Claude Haiku 4.5
 // ============================================
 
 // Rate Limiter – max 20 Anfragen pro Minute pro IP
+// Hinweis: In Serverless funktioniert dies pro Instanz –
+// schützt gegen schnelle Wiederholungen desselben Users
 const rateLimitMap = new Map();
 
 function isRateLimited(ip) {
@@ -17,7 +19,7 @@ function isRateLimited(ip) {
   return requests.length > maxRequests;
 }
 
-// Guardrail – ausserhalb Handler für bessere Performance
+// Guardrail – Halluzinations-Schutz
 function validateReply(text) {
   const lower = text.toLowerCase();
   const hasPrice = /chf\s*[\d.,]+|fr\.\s*[\d.,]+|\d+['.]?\d*\s*(franken|chf)/i.test(text);
@@ -30,34 +32,8 @@ function validateReply(text) {
   return text;
 }
 
-export default async function handler(req, res) {
-
-  if (req.method !== 'POST') {
-    return res.status(405).json({ error: 'Nur POST erlaubt' });
-  }
-
-  const ip = req.headers['x-forwarded-for'] || req.socket?.remoteAddress || 'unknown';
-  if (isRateLimited(ip)) {
-    return res.status(429).json({ error: 'Zu viele Anfragen. Bitte warten Sie kurz.' });
-  }
-
-  const { messages, sessionId } = req.body;
-  if (!messages || !Array.isArray(messages) || messages.length === 0) {
-    return res.status(400).json({ error: 'Keine gültigen Nachrichten erhalten' });
-  }
-
-  // Gesprächsverlauf auf max 20 Nachrichten begrenzen
-  const limitedMessages = messages.slice(-20);
-
-  const API_KEY      = process.env.ANTHROPIC_API_KEY;
-  const SUPABASE_URL = process.env.SUPABASE_URL;
-  const SUPABASE_KEY = process.env.SUPABASE_KEY;
-
-  if (!API_KEY) return res.status(200).json({
-    reply: 'Entschuldigung, der Assistent ist momentan nicht verfügbar. Bitte besuchen Sie: https://swiss-energy-partner.ch/kontakt'
-  });
-
-  const SYSTEM_PROMPT = `Du bist "SEP Assistent" – der digitale Solar-Berater von Swiss Energy Partner GmbH, einem führenden Hybrid-Solaranbieter der Deutschschweiz.
+// System Prompt – einmal definiert ausserhalb des Handlers
+const SYSTEM_PROMPT = `Du bist "SEP Assistent" – der digitale Solar-Berater von Swiss Energy Partner GmbH, einem führenden Hybrid-Solaranbieter der Deutschschweiz.
 
 DEIN CHARAKTER:
 Du klingst wie ein erfahrener, sympathischer Schweizer Energieberater und nicht wie ein Roboter. Du bist direkt, ehrlich und hilfreich. Du schreibst fliessend und menschlich, nicht abgehackt. Du stellst kluge Fragen. Du erfindest NIE Fakten.
@@ -160,6 +136,80 @@ ABSOLUT KRITISCHE REGELN – NIEMALS BRECHEN
 - NIEMALS Neukunden auf E-Mail schicken.
 - NIEMALS Bestandskunden mit Problemen auf Kontaktformular schicken.`;
 
+// Erlaubte Origins für CORS
+const ALLOWED_ORIGINS = [
+  'https://swiss-energy-partner.ch',
+  'https://www.swiss-energy-partner.ch',
+  'https://solar-chatbot-orpin.vercel.app'
+];
+
+export default async function handler(req, res) {
+
+  // CORS – erlaubt alle relevanten Origins
+  const origin = req.headers.origin || '';
+  if (ALLOWED_ORIGINS.includes(origin)) {
+    res.setHeader('Access-Control-Allow-Origin', origin);
+  }
+  res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+  res.setHeader('Vary', 'Origin');
+
+  if (req.method === 'OPTIONS') {
+    return res.status(200).end();
+  }
+
+  if (req.method !== 'POST') {
+    return res.status(405).json({ error: 'Nur POST erlaubt' });
+  }
+
+  // IP – zuverlässig und nicht fälschbar über Vercel
+  const ip = req.headers['x-real-ip']
+    || req.headers['x-forwarded-for']?.split(',')[0]?.trim()
+    || req.socket?.remoteAddress
+    || 'unknown';
+
+  if (isRateLimited(ip)) {
+    return res.status(200).json({ reply: 'Bitte warten Sie kurz und versuchen Sie es gleich erneut.' });
+  }
+
+  const { messages, sessionId } = req.body;
+
+  // Input Validation
+  if (!messages || !Array.isArray(messages) || messages.length === 0) {
+    return res.status(400).json({ error: 'Keine gültigen Nachrichten erhalten' });
+  }
+
+  const MAX_MSG_LENGTH = 1000;
+  const validMessages = messages.every(m =>
+    m &&
+    typeof m.role === 'string' &&
+    typeof m.content === 'string' &&
+    m.content.length <= MAX_MSG_LENGTH &&
+    ['user', 'assistant'].includes(m.role)
+  );
+
+  if (!validMessages) {
+    return res.status(400).json({ error: 'Ungültige Nachrichtenstruktur' });
+  }
+
+  // Gesprächsverlauf auf max 20 Nachrichten begrenzen
+  // Sicherstellen dass erste Nachricht immer "user" ist (Anthropic-Anforderung)
+  let limitedMessages = messages.slice(-20);
+  if (limitedMessages[0]?.role === 'assistant') {
+    limitedMessages = limitedMessages.slice(1);
+  }
+  if (limitedMessages.length === 0) {
+    return res.status(400).json({ error: 'Keine gültigen Nachrichten nach Validierung' });
+  }
+
+  const API_KEY      = process.env.ANTHROPIC_API_KEY;
+  const SUPABASE_URL = process.env.SUPABASE_URL;
+  const SUPABASE_KEY = process.env.SUPABASE_KEY;
+
+  if (!API_KEY) return res.status(200).json({
+    reply: 'Entschuldigung, der Assistent ist momentan nicht verfügbar. Bitte besuchen Sie: https://swiss-energy-partner.ch/kontakt'
+  });
+
   try {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 15000);
@@ -177,7 +227,6 @@ ABSOLUT KRITISCHE REGELN – NIEMALS BRECHEN
           model: 'claude-haiku-4-5',
           max_tokens: 250,
           temperature: 0.3,
-          stop_sequences: ['\n\nUser:', '\n\nDu:'],
           system: SYSTEM_PROMPT,
           messages: limitedMessages
         }),
@@ -187,21 +236,32 @@ ABSOLUT KRITISCHE REGELN – NIEMALS BRECHEN
       clearTimeout(timeout);
     }
 
+    // HTTP Status prüfen bevor JSON parsen
     if (anthropicResponse.status === 429) {
       return res.status(200).json({
         reply: 'Im Moment sind wir sehr beschäftigt. Bitte versuchen Sie es gleich erneut oder besuchen Sie: https://swiss-energy-partner.ch/kontakt'
       });
     }
 
-    const data = await anthropicResponse.json();
-    if (data.error) return res.status(500).json({ error: data.error.message });
+    if (!anthropicResponse.ok) {
+      console.error('Anthropic API Error:', anthropicResponse.status);
+      return res.status(200).json({
+        reply: 'Entschuldigung, es gab einen technischen Fehler. Bitte versuchen Sie es erneut oder besuchen Sie: https://swiss-energy-partner.ch/kontakt'
+      });
+    }
 
+    const data = await anthropicResponse.json();
     const rawReply = data.content?.[0]?.text || 'Keine Antwort erhalten.';
     const reply = validateReply(rawReply);
 
+    // Supabase Logging
     if (SUPABASE_URL && SUPABASE_KEY) {
-      const letzteNachricht = limitedMessages[limitedMessages.length - 1]?.content || '';
+      const lastMsg = limitedMessages[limitedMessages.length - 1];
+      const letzteNachricht = typeof lastMsg?.content === 'string'
+        ? lastMsg.content
+        : JSON.stringify(lastMsg?.content || '');
       const sid = sessionId || 'unbekannt';
+
       fetch(`${SUPABASE_URL}/rest/v1/chats`, {
         method: 'POST',
         headers: {
@@ -215,7 +275,7 @@ ABSOLUT KRITISCHE REGELN – NIEMALS BRECHEN
           session_id: sid,
           anzahl_nachrichten: limitedMessages.length
         })
-      }).catch(() => {});
+      }).catch(err => console.error('Supabase Logging Fehler:', err));
     }
 
     return res.status(200).json({ reply });
@@ -224,6 +284,7 @@ ABSOLUT KRITISCHE REGELN – NIEMALS BRECHEN
     if (err.name === 'AbortError') {
       return res.status(200).json({ reply: 'Die Anfrage hat zu lange gedauert. Bitte versuchen Sie es erneut.' });
     }
+    console.error('Unbekannter Fehler:', err);
     return res.status(500).json({ error: 'Serverfehler' });
   }
 }
