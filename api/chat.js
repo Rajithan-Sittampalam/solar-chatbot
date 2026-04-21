@@ -1,8 +1,9 @@
 // ============================================
-// api/chat.js – SEP Solar Assistent v4.0
+// api/chat.js – SEP Solar Assistent v4.1
 // Claude Haiku 4.5
 // ============================================
 
+// Rate Limiter – max 20 Anfragen pro Minute pro IP
 const rateLimitMap = new Map();
 
 function isRateLimited(ip) {
@@ -14,6 +15,19 @@ function isRateLimited(ip) {
   requests.push(now);
   rateLimitMap.set(ip, requests);
   return requests.length > maxRequests;
+}
+
+// Guardrail – ausserhalb Handler für bessere Performance
+function validateReply(text) {
+  const lower = text.toLowerCase();
+  const hasPrice = /chf\s*[\d.,]+|fr\.\s*[\d.,]+|\d+['.]?\d*\s*(franken|chf)/i.test(text);
+  const hasGuarantee = /(garantie|garantieren|garant).*(\d+\s*jahr)/i.test(lower);
+  const hasFalseContact = /(ich werde mich melden|ich kontaktiere|ich rufe|ich schreibe ihnen|ich melde mich)/i.test(lower);
+  const praiseCompetitor = /(konkurrenz ist besser|andere anbieter sind besser|empfehle ihnen einen anderen)/i.test(lower);
+  if (hasPrice || hasGuarantee || hasFalseContact || praiseCompetitor) {
+    return 'Für genaue Details zu Ihrer Situation erstellen wir gerne ein individuelles Angebot. Vereinbaren Sie jetzt ein kostenloses Beratungsgespräch: https://swiss-energy-partner.ch/kontakt';
+  }
+  return text;
 }
 
 export default async function handler(req, res) {
@@ -32,12 +46,16 @@ export default async function handler(req, res) {
     return res.status(400).json({ error: 'Keine gültigen Nachrichten erhalten' });
   }
 
-  const limitedMessages = messages;
+  // Gesprächsverlauf auf max 20 Nachrichten begrenzen
+  const limitedMessages = messages.slice(-20);
+
   const API_KEY      = process.env.ANTHROPIC_API_KEY;
   const SUPABASE_URL = process.env.SUPABASE_URL;
   const SUPABASE_KEY = process.env.SUPABASE_KEY;
 
-  if (!API_KEY) return res.status(500).json({ error: 'Konfigurationsfehler' });
+  if (!API_KEY) return res.status(200).json({
+    reply: 'Entschuldigung, der Assistent ist momentan nicht verfügbar. Bitte besuchen Sie: https://swiss-energy-partner.ch/kontakt'
+  });
 
   const SYSTEM_PROMPT = `Du bist "SEP Assistent" – der digitale Solar-Berater von Swiss Energy Partner GmbH, einem führenden Hybrid-Solaranbieter der Deutschschweiz.
 
@@ -148,9 +166,6 @@ ABSOLUT KRITISCHE REGELN – NIEMALS BRECHEN
 
     let anthropicResponse;
     try {
-      // Nachrichten ins Anthropic-Format umwandeln
-      // Anthropic erwartet: [{role: "user", content: "..."}, {role: "assistant", content: "..."}]
-      // Kein "system" in messages – system kommt separat
       anthropicResponse = await fetch('https://api.anthropic.com/v1/messages', {
         method: 'POST',
         headers: {
@@ -161,6 +176,8 @@ ABSOLUT KRITISCHE REGELN – NIEMALS BRECHEN
         body: JSON.stringify({
           model: 'claude-haiku-4-5',
           max_tokens: 250,
+          temperature: 0.3,
+          stop_sequences: ['\n\nUser:', '\n\nDu:'],
           system: SYSTEM_PROMPT,
           messages: limitedMessages
         }),
@@ -180,23 +197,6 @@ ABSOLUT KRITISCHE REGELN – NIEMALS BRECHEN
     if (data.error) return res.status(500).json({ error: data.error.message });
 
     const rawReply = data.content?.[0]?.text || 'Keine Antwort erhalten.';
-
-    // ============================================
-    // GUARDRAIL – Halluzinations-Schutz
-    // ============================================
-    function validateReply(text) {
-      const lower = text.toLowerCase();
-      const hasPrice = /chf\s*[\d.,]+|fr\.\s*[\d.,]+|\d+['.]?\d*\s*(franken|chf)/i.test(text);
-      const hasGuarantee = /(garantie|garantieren|garant).*(\d+\s*jahr)/i.test(lower);
-      const hasFalseContact = /(ich werde mich melden|ich kontaktiere|ich rufe|ich schreibe ihnen|ich melde mich)/i.test(lower);
-      const praiseCompetitor = /(konkurrenz ist besser|andere anbieter sind besser|empfehle ihnen einen anderen)/i.test(lower);
-
-      if (hasPrice || hasGuarantee || hasFalseContact || praiseCompetitor) {
-        return 'Für genaue Details zu Ihrer Situation erstellen wir gerne ein individuelles Angebot. Vereinbaren Sie jetzt ein kostenloses Beratungsgespräch: https://swiss-energy-partner.ch/kontakt';
-      }
-      return text;
-    }
-
     const reply = validateReply(rawReply);
 
     if (SUPABASE_URL && SUPABASE_KEY) {
